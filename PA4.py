@@ -9,7 +9,7 @@ from typing import List, Dict, Any, Tuple
 
 # --- 1. CONFIGURATION AND UTILITIES ---
 
-# JSON Format Description (เหมือนเดิม)
+# JSON Format Description (อัปเดตแล้ว: เพิ่มความชัดเจนของแหล่งที่มา)
 JSON_FORMAT_DESCRIPTION = """
 [
   {
@@ -18,7 +18,7 @@ JSON_FORMAT_DESCRIPTION = """
     "มูลค่า_ความเสียหาย_บาท": (float หรือ number),
     "ผู้เสียชีวิต_จำนวน": (integer),
     "ผู้บาดเจ็บ_จำนวน": (integer),
-    "แหล่งที่มา_ของ_ข่าว": "(ชื่อเว็ปไซต์, สำนักข่าว, และลิงก์อ้างอิงหลายแหล่งก็ได้ โดยคั่นด้วยเครื่องหมายจุลภาค)",
+    "แหล่งที่มา_ของ_ข่าว": "(ต้องระบุชื่อสำนักข่าว/ชื่อเว็บไซต์ **และ** URL ลิงก์อ้างอิงของแต่ละแหล่งข่าวให้ชัดเจน (ถ้ามีหลายแหล่งให้คั่นด้วยเครื่องหมายจุลภาค))",
     "รายละเอียด_ของ_เหตุการณ์": "(ข้อความสรุปเหตุการณ์ 100-300 คำ อธิบายสาเหตุ พื้นที่ และผลกระทบ **เป็นภาษาไทย**)"
   }
   // ... รายการเหตุการณ์อื่นๆ
@@ -50,7 +50,7 @@ def create_raw_search_prompt_en(event_type_en: str, location_en: str) -> str:
     
     return (
         f"Search for historical statistics related to the disaster event type '{event_type_en}' that occurred in the region '{location_en}'. "
-        "Focus on reports detailing the date/time, damage costs, number of fatalities, injuries, **news sources/links**, and **brief event summaries**. "
+        "Focus on reports detailing the date/time, damage costs, number of fatalities, injuries, **clear news sources (website names/agency names) and their corresponding URLs**, and **brief event summaries**. "
         f"Summarize all findings into a **single, long text document** containing sufficient detail for subsequent statistical data extraction. Target between {MIN_EVENTS} and {MAX_EVENTS} separate historical events."
     )
 
@@ -64,10 +64,11 @@ def create_extraction_prompt(event_type_en: str, location_en: str) -> str:
         "and extract the statistical data into a **100% correct JSON Array format**. "
         "Strict Rules: "
         f"1. The JSON Array must strictly adhere to this structure (with Thai keys):\n{JSON_FORMAT_DESCRIPTION}\n"
-        "2. The 'รายละเอียด_ของ_เหตุการณ์' column **MUST BE WRITTEN IN THAI** (100-300 words summary) based on the English source text. "
-        "3. If clear figures for damage cost, fatalities, or injuries are not found, **set the value to 0 (zero). DO NOT use Null or omit the key.** "
-        "4. **HAVE AT LEAST " + str(MIN_EVENTS) + " EVENTS but NO MORE THAN " + str(MAX_EVENTS) + " EVENTS.**"
-        "5. **NO TEXT** is allowed before or after the JSON Array."
+        "2. The 'แหล่งที่มา_ของ_ข่าว' column **MUST include the source name (e.g., BBC, NOAA) AND the specific URL/link** for the article, separated by a colon (e.g., 'Source Name: URL'). If multiple sources are used, separate them with a comma. "
+        "3. The 'รายละเอียด_ของ_เหตุการณ์' column **MUST BE WRITTEN IN THAI** (100-300 words summary) based on the English source text. "
+        "4. If clear figures for damage cost, fatalities, or injuries are not found, **set the value to 0 (zero). DO NOT use Null or omit the key.** "
+        "5. **HAVE AT LEAST " + str(MIN_EVENTS) + " EVENTS but NO MORE THAN " + str(MAX_EVENTS) + " EVENTS.**"
+        "6. **NO TEXT** is allowed before or after the JSON Array."
     )
     return system_prompt
 
@@ -187,13 +188,13 @@ else:
 
                         # --- ตรวจสอบจำนวนเหตุการณ์ ---
                         if num_events < MIN_EVENTS:
-                            st.error(f"⚠️ ข้อมูลไม่เพียงพอ! พบเหตุการณ์เพียง **{num_events}** ครั้ง กรุณาลองระบุภัยพิบัติหรือสถานที่ที่กว้างขึ้น")
+                            st.error(f"⚠️ ข้อมูลไม่เพียงพอ! พบเหตุการณ์เพียง **{num_events}** ครั้ง (เป้าหมายคือ {MIN_EVENTS}-{MAX_EVENTS} ครั้ง) กรุณาลองระบุภัยพิบัติหรือสถานที่ที่กว้างขึ้น")
                             st.subheader("Raw JSON Output (สำหรับตรวจสอบ)")
                             st.code(json_output)
                             st.stop()
                         
                         if num_events > MAX_EVENTS:
-                            st.error(f"⚠️ ข้อมูลมากเกินไป! พบเหตุการณ์ถึง **{num_events}** ครั้ง กรุณาลองระบุภัยพิบัติหรือสถานที่ที่แคบลง")
+                            st.error(f"⚠️ ข้อมูลมากเกินไป! พบเหตุการณ์ถึง **{num_events}** ครั้ง (เป้าหมายคือ {MIN_EVENTS}-{MAX_EVENTS} ครั้ง) กรุณาลองระบุภัยพิบัติหรือสถานที่ที่แคบลง")
                             st.subheader("Raw JSON Output (สำหรับตรวจสอบ)")
                             st.code(json_output)
                             st.stop()
