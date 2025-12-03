@@ -61,9 +61,7 @@ def generate_geo_csv(client: genai.Client, text_input: str, headers: str) -> str
     try:
         response = client.models.generate_content(
             model='gemini-2.5-flash',
-            contents=[
-                types.Content(role='user', parts=[types.Part.from_text(user_prompt)]),
-            ],
+            contents=[user_prompt],
             config=types.GenerateContentConfig(
                 system_instruction=system_prompt,
                 # ตั้งค่าอุณหภูมิให้ต่ำเพื่อเพิ่มความน่าเชื่อถือในการสร้างโครงสร้างที่แม่นยำ
