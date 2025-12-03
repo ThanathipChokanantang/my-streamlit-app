@@ -97,7 +97,7 @@ st.set_page_config(
 )
 
 st.title("Disaster Event Statistics Analyzer")
-st.caption("จัดทำโดย ธนาธิป โชคอนันตัง 6741005022 นิสิตภาควิชาภูมิศาสตร์ จุฬาลงกรณณ์มหาวิทยาลัย")
+st.caption("Programming Assignment 4 วิชา 2209261 BASIG PROG NLP จัดทำโดย ธนาธิป โชคอนันตัง 6741005022 นิสิตภาควิชาภูมิศาสตร์ จุฬาลงกรณณ์มหาวิทยาลัย")
 
 # --- 3. STREAMLIT APP LOGIC ---
 
