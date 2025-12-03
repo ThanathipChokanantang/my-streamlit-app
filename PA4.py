@@ -17,7 +17,7 @@ JSON_FORMAT_DESCRIPTION = """
     "มูลค่า_ความเสียหาย_บาท": (float หรือ number),
     "ผู้เสียชีวิต_จำนวน": (integer),
     "ผู้บาดเจ็บ_จำนวน": (integer),
-    "แหล่งที่มา_ของ_ข่าว": "(ต้องระบุชื่อสำนักข่าว/ชื่อเว็บไซต์ **และ** URL ลิงก์อ้างอิงของแต่ละแหล่งข่าวให้ชัดเจน (ถ้ามีหลายแหล่งให้คั่นด้วยเครื่องหมายจุลภาค))",
+    "แหล่งที่มา_ของ_ข่าว": "(ระบุชื่อสำนักข่าว/เว็บไซต์ **และ** URL ลิงก์อ้างอิง ถ้ามีการพยากรณ์ข้อมูล ให้เพิ่มข้อความต่อไปนี้ต่อท้าย: 'Gemini พยากรณ์ข้อมูลประเภท [มูลค่า_ความเสียหาย_บาท หรือ ผู้บาดเจ็บ_จำนวน] โดยอ้างอิงข้อมูลจาก [ระบุแหล่งข้อมูลที่ใช้ในการพยากรณ์]')"
     "รายละเอียด_ของ_เหตุการณ์": "(ข้อความสรุปเหตุการณ์ 100-300 คำ อธิบายสาเหตุ พื้นที่ และผลกระทบ **เป็นภาษาไทย**)"
   }
   // ... รายการเหตุการณ์อื่นๆ
@@ -49,27 +49,26 @@ def create_raw_search_prompt_en(event_type_en: str, location_en: str) -> str:
     
     return (
         f"Search for historical statistics related to the disaster event type '{event_type_en}' that occurred in the region '{location_en}'. "
-        "Focus on reports detailing the date/time, damage costs (including currency conversion potential), number of fatalities, injuries, **clear news sources (website names/agency names) and their corresponding URLs**, and **brief event summaries**. "
+        "Focus on reports detailing the date/time, damage costs, number of fatalities, injuries, **clear news sources (website names/agency names) and their corresponding URLs**, and **brief event summaries**. "
         f"Summarize all findings into a **single, long text document** containing sufficient detail for subsequent statistical data extraction. Target between {MIN_EVENTS} and {MAX_EVENTS} separate historical events."
     )
 
 def create_extraction_prompt(event_type_en: str, location_en: str) -> str:
-    """Prompt สำหรับขั้นตอนที่ 2 (ภาษาอังกฤษ เน้นให้ Output เป็น JSON และสรุปรายละเอียดเป็นภาษาไทย)"""
+    """Prompt สำหรับขั้นตอนที่ 2 (ภาษาอังกฤษ เน้นให้ Output เป็น JSON และสรุปรายละเอียดเป็นภาษาไทย พร้อมกลไกพยากรณ์)"""
     
-    # System Prompt ที่เน้นการสกัดตัวเลข, รายละเอียด และแหล่งที่มา
+    # System Prompt ที่เน้นการสกัดตัวเลข, รายละเอียด, แหล่งที่มา, และการพยากรณ์
     system_prompt = (
-        "You are an expert in historical data analysis. Your task is to analyze the 'raw text' I provide, "
+        "You are an expert in historical data analysis and estimation. Your task is to analyze the 'raw text' I provide, "
         "which summarizes disaster statistics for the event type '" + event_type_en + "' in '" + location_en + "', "
         "and extract the statistical data into a **100% correct JSON Array format**. "
         "Strict Rules: "
         f"1. The JSON Array must strictly adhere to this structure (with Thai keys):\n{JSON_FORMAT_DESCRIPTION}\n"
-        "2. **PRIORITY 1 (DAMAGE COST): Strive to find and extract a specific number for 'มูลค่า_ความเสียหาย_บาท'. Search for cost figures (USD, local currency, million/billion, etc.) and convert them to the best estimated Baht value, or use the most credible number found.** "
-        "3. **PRIORITY 2 (INJURIES): Strive to find and extract a specific number for 'ผู้บาดเจ็บ_จำนวน'. Search for any related figures (e.g., 'injured', 'hospitalized', 'victims') and use the most credible number found.** "
+        "2. **IF DATA IS MISSING (มูลค่า_ความเสียหาย_บาท or ผู้บาดเจ็บ_จำนวน):** You MUST **predict/estimate** the value based on the other available data (e.g., fatalities, event scale, similar past events). The predicted value can be **0** if the context strongly suggests minimal or no impact, or if no reliable estimation can be made. "
+        "3. **IF PREDICTION/ESTIMATION IS USED (including 0):** The 'แหล่งที่มา_ของ_ข่าว' column MUST include the original source information. Then, append a semicolon (;) followed by the specific prediction note in Thai: 'Gemini พยากรณ์ข้อมูลประเภท [ชื่อคอลัมน์ที่พยากรณ์] โดยอ้างอิงข้อมูลจาก [ระบุแหล่งข้อมูลที่ใช้ในการพยากรณ์ เช่น อัตราส่วนผู้เสียชีวิตต่อผู้บาดเจ็บ, การแปลงค่าเงิน, หรือขนาดความรุนแรงของภัยพิบัติ]'. If 0 is chosen as the prediction, state the reason clearly (e.g., 'ตั้งค่าเป็น 0 เนื่องจากขาดข้อมูลและเหตุการณ์มีความรุนแรงต่ำ')."
         "4. The 'แหล่งที่มา_ของ_ข่าว' column **MUST include the source name (e.g., BBC, NOAA) AND the specific URL/link** for the article, separated by a colon (e.g., 'Source Name: URL'). If multiple sources are used, separate them with a comma. "
         "5. The 'รายละเอียด_ของ_เหตุการณ์' column **MUST BE WRITTEN IN THAI** (100-300 words summary) based on the English source text. "
-        "6. If clear figures for damage cost, fatalities, or injuries are not found, **set the value to 0 (zero). DO NOT use Null or omit the key.** "
-        "7. **HAVE AT LEAST " + str(MIN_EVENTS) + " EVENTS but NO MORE THAN " + str(MAX_EVENTS) + " EVENTS.**"
-        "8. **NO TEXT** is allowed before or after the JSON Array."
+        "6. **HAVE AT LEAST " + str(MIN_EVENTS) + " EVENTS but NO MORE THAN " + str(MAX_EVENTS) + " EVENTS.**"
+        "7. **NO TEXT** is allowed before or after the JSON Array."
     )
     return system_prompt
 
@@ -102,20 +101,16 @@ st.set_page_config(
 st.title("📊 Disaster Event Statistics Analyzer (ค้นหาภาษาอังกฤษ)")
 st.caption("วิเคราะห์สถิติความเสียหาย, ผู้เสียชีวิต, และผู้บาดเจ็บของภัยพิบัติในอดีต")
 
-
+# --- 3. STREAMLIT APP LOGIC ---
 
 # 🔑 Gemini API Configuration
-
 with st.sidebar:
     st.header("🔑 Gemini API Configuration")
     api_key = st.text_input("Enter your Gemini API Key", type="password")
     st.divider()
     st.info("💡 โปรแกรมนี้จะแปล Input เป็นภาษาอังกฤษก่อนการค้นหาเพื่อเพิ่มความแม่นยำ")
 
-
-
 # 🔎 Main Content
-
 if not api_key:
     st.warning("โปรดใส่ **Gemini API Key** ใน Sidebar เพื่อเริ่มต้นใช้งาน")
 else:
