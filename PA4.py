@@ -9,7 +9,7 @@ from typing import List, Dict, Any, Tuple
 
 # --- 1. CONFIGURATION AND UTILITIES ---
 
-# JSON Format Description (อัปเดตแล้ว)
+# JSON Format Description (เหมือนเดิม)
 JSON_FORMAT_DESCRIPTION = """
 [
   {
@@ -25,7 +25,11 @@ JSON_FORMAT_DESCRIPTION = """
 ]
 """
 
-# ฟังก์ชันใหม่: แปล Input เป็นภาษาอังกฤษ
+# กำหนดช่วงจำนวนเหตุการณ์ที่ต้องการ
+MIN_EVENTS = 10
+MAX_EVENTS = 100
+
+# ฟังก์ชันใหม่: แปล Input เป็นภาษาอังกฤษ (เหมือนเดิม)
 def translate_to_english(client: genai.Client, text: str) -> str:
     """ใช้ Gemini เพื่อแปลข้อความภาษาไทยเป็นภาษาอังกฤษ"""
     
@@ -34,12 +38,12 @@ def translate_to_english(client: genai.Client, text: str) -> str:
         response = client.models.generate_content(
             model='gemini-2.5-flash',
             contents=[f"Translate the following Thai text to English: '{text}'"],
-            config=types.GenerateContentConfig(temperature=0.0) # ใช้ความแม่นยำสูง
+            config=types.GenerateContentConfig(temperature=0.0)
         )
         return response.text.strip()
     except Exception as e:
         st.error(f"เกิดข้อผิดพลาดในการแปลภาษา: {e}")
-        return text # หากแปลไม่ได้ ให้ใช้ข้อความเดิม
+        return text
 
 def create_raw_search_prompt_en(event_type_en: str, location_en: str) -> str:
     """Prompt สำหรับขั้นตอนที่ 1 (ภาษาอังกฤษ)"""
@@ -47,7 +51,7 @@ def create_raw_search_prompt_en(event_type_en: str, location_en: str) -> str:
     return (
         f"Search for historical statistics related to the disaster event type '{event_type_en}' that occurred in the region '{location_en}'. "
         "Focus on reports detailing the date/time, damage costs, number of fatalities, injuries, **news sources/links**, and **brief event summaries**. "
-        "Summarize all findings into a **single, long text document** containing sufficient detail for subsequent statistical data extraction."
+        f"Summarize all findings into a **single, long text document** containing sufficient detail for subsequent statistical data extraction. Target between {MIN_EVENTS} and {MAX_EVENTS} separate historical events."
     )
 
 def create_extraction_prompt(event_type_en: str, location_en: str) -> str:
@@ -62,7 +66,8 @@ def create_extraction_prompt(event_type_en: str, location_en: str) -> str:
         f"1. The JSON Array must strictly adhere to this structure (with Thai keys):\n{JSON_FORMAT_DESCRIPTION}\n"
         "2. The 'รายละเอียด_ของ_เหตุการณ์' column **MUST BE WRITTEN IN THAI** (100-300 words summary) based on the English source text. "
         "3. If clear figures for damage cost, fatalities, or injuries are not found, **set the value to 0 (zero). DO NOT use Null or omit the key.** "
-        "4. **NO TEXT** is allowed before or after the JSON Array."
+        "4. **HAVE AT LEAST " + str(MIN_EVENTS) + " EVENTS but NO MORE THAN " + str(MAX_EVENTS) + " EVENTS.**"
+        "5. **NO TEXT** is allowed before or after the JSON Array."
     )
     return system_prompt
 
@@ -178,7 +183,22 @@ else:
                     try:
                         data: List[Dict[str, Any]] = json.loads(json_output)
                         
-                        if not data:
+                        num_events = len(data)
+
+                        # --- ตรวจสอบจำนวนเหตุการณ์ ---
+                        if num_events < MIN_EVENTS:
+                            st.error(f"⚠️ ข้อมูลไม่เพียงพอ! พบเหตุการณ์เพียง **{num_events}** ครั้ง กรุณาลองระบุภัยพิบัติหรือสถานที่ที่กว้างขึ้น")
+                            st.subheader("Raw JSON Output (สำหรับตรวจสอบ)")
+                            st.code(json_output)
+                            st.stop()
+                        
+                        if num_events > MAX_EVENTS:
+                            st.error(f"⚠️ ข้อมูลมากเกินไป! พบเหตุการณ์ถึง **{num_events}** ครั้ง กรุณาลองระบุภัยพิบัติหรือสถานที่ที่แคบลง")
+                            st.subheader("Raw JSON Output (สำหรับตรวจสอบ)")
+                            st.code(json_output)
+                            st.stop()
+
+                        if num_events == 0:
                             st.error(f"❌ ไม่พบข้อมูลสถิติเหตุการณ์ '{event_type_th}' ใน '{location_th}' ที่มีข้อมูลครบถ้วน")
                             st.warning("โปรดลองระบุสถานที่หรือประเภทภัยพิบัติที่กว้างขึ้น")
                             st.subheader("Raw JSON Output (สำหรับตรวจสอบ)")
