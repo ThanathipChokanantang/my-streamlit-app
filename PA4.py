@@ -9,7 +9,7 @@ from typing import List, Dict, Any, Tuple
 
 # --- 1. CONFIGURATION AND UTILITIES ---
 
-# JSON Format Description (อัปเดตแล้ว: ลบคอลัมน์ ลำดับ_เหตุการณ์)
+# JSON Format Description (เหมือนเดิม)
 JSON_FORMAT_DESCRIPTION = """
 [
   {
@@ -49,7 +49,7 @@ def create_raw_search_prompt_en(event_type_en: str, location_en: str) -> str:
     
     return (
         f"Search for historical statistics related to the disaster event type '{event_type_en}' that occurred in the region '{location_en}'. "
-        "Focus on reports detailing the date/time, damage costs, number of fatalities, injuries, **clear news sources (website names/agency names) and their corresponding URLs**, and **brief event summaries**. "
+        "Focus on reports detailing the date/time, damage costs (including currency conversion potential), number of fatalities, injuries, **clear news sources (website names/agency names) and their corresponding URLs**, and **brief event summaries**. "
         f"Summarize all findings into a **single, long text document** containing sufficient detail for subsequent statistical data extraction. Target between {MIN_EVENTS} and {MAX_EVENTS} separate historical events."
     )
 
@@ -63,11 +63,13 @@ def create_extraction_prompt(event_type_en: str, location_en: str) -> str:
         "and extract the statistical data into a **100% correct JSON Array format**. "
         "Strict Rules: "
         f"1. The JSON Array must strictly adhere to this structure (with Thai keys):\n{JSON_FORMAT_DESCRIPTION}\n"
-        "2. The 'แหล่งที่มา_ของ_ข่าว' column **MUST include the source name (e.g., BBC, NOAA) AND the specific URL/link** for the article, separated by a colon (e.g., 'Source Name: URL'). If multiple sources are used, separate them with a comma. "
-        "3. The 'รายละเอียด_ของ_เหตุการณ์' column **MUST BE WRITTEN IN THAI** (100-300 words summary) based on the English source text. "
-        "4. If clear figures for damage cost, fatalities, or injuries are not found, **set the value to 0 (zero). DO NOT use Null or omit the key.** "
-        "5. **HAVE AT LEAST " + str(MIN_EVENTS) + " EVENTS but NO MORE THAN " + str(MAX_EVENTS) + " EVENTS.**"
-        "6. **NO TEXT** is allowed before or after the JSON Array."
+        "2. **PRIORITY 1 (DAMAGE COST): Strive to find and extract a specific number for 'มูลค่า_ความเสียหาย_บาท'. Search for cost figures (USD, local currency, million/billion, etc.) and convert them to the best estimated Baht value, or use the most credible number found.** "
+        "3. **PRIORITY 2 (INJURIES): Strive to find and extract a specific number for 'ผู้บาดเจ็บ_จำนวน'. Search for any related figures (e.g., 'injured', 'hospitalized', 'victims') and use the most credible number found.** "
+        "4. The 'แหล่งที่มา_ของ_ข่าว' column **MUST include the source name (e.g., BBC, NOAA) AND the specific URL/link** for the article, separated by a colon (e.g., 'Source Name: URL'). If multiple sources are used, separate them with a comma. "
+        "5. The 'รายละเอียด_ของ_เหตุการณ์' column **MUST BE WRITTEN IN THAI** (100-300 words summary) based on the English source text. "
+        "6. If clear figures for damage cost, fatalities, or injuries are not found, **set the value to 0 (zero). DO NOT use Null or omit the key.** "
+        "7. **HAVE AT LEAST " + str(MIN_EVENTS) + " EVENTS but NO MORE THAN " + str(MAX_EVENTS) + " EVENTS.**"
+        "8. **NO TEXT** is allowed before or after the JSON Array."
     )
     return system_prompt
 
@@ -209,9 +211,6 @@ else:
                             
                         df = pd.DataFrame(data)
                         
-                        # สร้างคอลัมน์ ลำดับเหตุการณ์ใหม่ที่ใช้แค่ในการแสดงผลกราฟ/ตาราง (ถ้าต้องการ)
-                        # เนื่องจากคุณขอให้นำออก ผมจะสร้างแค่คอลัมน์ Label สำหรับ Chart
-                        
                         # ทำความสะอาดข้อมูลวันที่และเรียงลำดับ
                         df['วันที่_หรือ_ช่วงเวลา_Sort'] = pd.to_datetime(df['วันที่_หรือ_ช่วงเวลา'], errors='coerce')
                         df.dropna(subset=['วันที่_หรือ_ช่วงเวลา_Sort'], inplace=True) 
@@ -263,34 +262,4 @@ else:
                             labels={'ผู้เสียชีวิต_จำนวน': 'จำนวนผู้เสียชีวิต (คน)', 'เหตุการณ์_Label': 'วันที่/ช่วงเวลาเหตุการณ์ (เรียงตามลำดับ)'},
                             height=400,
                             color='ผู้เสียชีวิต_จำนวน',
-                            color_continuous_scale=px.colors.sequential.Reds
-                        )
-                        st.plotly_chart(fig2, use_container_width=True)
-                        
-                        # 4.3 กราฟจำนวนผู้บาดเจ็บ
-                        fig3 = px.bar(
-                            df, 
-                            x='เหตุการณ์_Label', 
-                            y='ผู้บาดเจ็บ_จำนวน', 
-                            title='🩹 จำนวนผู้ได้รับบาดเจ็บ (คน) ในแต่ละเหตุการณ์',
-                            labels={'ผู้บาดเจ็บ_จำนวน': 'จำนวนผู้บาดเจ็บ (คน)', 'เหตุการณ์_Label': 'วันที่/ช่วงเวลาเหตุการณ์ (เรียงตามลำดับ)'},
-                            height=400,
-                            color='ผู้บาดเจ็บ_จำนวน',
-                            color_continuous_scale=px.colors.sequential.Blues
-                        )
-                        st.plotly_chart(fig3, use_container_width=True)
-                        
-                    except json.JSONDecodeError:
-                        st.error("❌ เกิดข้อผิดพลาดในการประมวลผล JSON")
-                        st.warning("สาเหตุ: LLM ไม่สามารถสร้าง JSON ที่ถูกต้องตามโครงสร้างได้")
-                        st.subheader("Raw JSON Output (สำหรับตรวจสอบ)")
-                        st.code(json_output)
-                    except Exception as e:
-                        st.error(f"เกิดข้อผิดพลาดในการประมวลผลข้อมูลหรือสร้างกราฟ: {e}")
-                else:
-                    st.warning("ไม่สามารถสร้าง Output จาก Gemini API ได้")
-            else:
-                st.warning("โปรดระบุประเภทภัยพิบัติและสถานที่")
-                
-    except Exception as e:
-        st.error(f"เกิดข้อผิดพลาดในการเริ่มต้น Client: {e}")
+                            color_continuous_scale=px.colors.
